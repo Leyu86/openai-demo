@@ -5,3 +5,5 @@ backoff==2.2.1
 tenacity==8.2.2
 numpy==1.24.2
 pydub==0.25.1
+pydantic~=1.10.7
+asyncio~=3.4.3
