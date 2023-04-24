@@ -1,20 +1,21 @@
 import asyncio
+import json
 import logging
 import os
 import re
-import json
-import redis.asyncio as redis
-import numpy as np
+from typing import Dict, List, Optional
 
-from redis.commands.search.query import Query as RediSearchQuery
-from redis.commands.search.indexDefinition import IndexDefinition, IndexType
+import numpy as np
+import redis.asyncio as redis
 from redis.commands.search.field import (
     TagField,
     TextField,
     NumericField,
-    VectorField,
+    VectorField
 )
-from typing import Dict, List, Optional
+from redis.commands.search.indexDefinition import IndexDefinition, IndexType
+from redis.commands.search.query import Query as RediSearchQuery
+
 from datastore.datastore import DataStore
 from models.models import (
     DocumentChunk,
@@ -29,7 +30,7 @@ from util.date_util import to_unix_timestamp
 REDIS_HOST = os.environ.get("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.environ.get("REDIS_PORT", 6379))
 REDIS_PASSWORD = os.environ.get("REDIS_PASSWORD")
-REDIS_INDEX_NAME = os.environ.get("REDIS_INDEX_NAME", "company-search-index")
+REDIS_INDEX_NAME = os.environ.get("REDIS_INDEX_NAME", "news-index")
 REDIS_DOC_PREFIX = os.environ.get("REDIS_DOC_PREFIX", "doc")
 REDIS_DISTANCE_METRIC = os.environ.get("REDIS_DISTANCE_METRIC", "COSINE")
 REDIS_INDEX_TYPE = os.environ.get("REDIS_INDEX_TYPE", "FLAT")
@@ -55,6 +56,9 @@ def unpack_schema(d: dict):
     for v in d.values():
         if isinstance(v, dict):
             yield from unpack_schema(v)
+        elif isinstance(v, (list, tuple)):
+            for _v in v:
+                yield from unpack_schema(_v)
         else:
             yield v
 
@@ -103,10 +107,19 @@ class RedisDataStore(DataStore):
         redisearch_schema = {
             "document_id": TagField("$.document_id", as_name="document_id"),
             "metadata": {
-                "source_id": TagField("$.metadata.source_id", as_name="source_id"),
-                "source": TagField("$.metadata.source", as_name="source"),
-                "author": TextField("$.metadata.author", as_name="author"),
-                "created_at": NumericField("$.metadata.created_at", as_name="created_at"),
+                "news_id": TagField("$.metadata.id", as_name="news_id"),
+                "title": TextField("$.metadata.title", as_name="title"),
+                "content": TextField("$.metadata.content", as_name="content"),
+                "url": TagField("$.metadata.url", as_name="url"),
+                "created_at": TagField("$.metadata.created_at", as_name="created_at"),
+                "organization": [{
+                    "entity_id": TagField("$.metadata.organization.id", as_name="entity_id"),
+                    "name": TextField("$.metadata.organization.name", as_name="name"),
+                    "country": TagField("$.metadata.organization.country", as_name="country"),
+                    "logo": TagField("$.metadata.organization.logo", as_name="logo"),
+                    "is_startup": TagField("$.metadata.organization.is_startup", as_name="is_startup"),
+                    "is_unicorn": TagField("$.metadata.organization.is_unicorn", as_name="is_unicorn")
+                }]
             },
             "embedding": VectorField(
                 "$.embedding",
@@ -184,7 +197,22 @@ class RedisDataStore(DataStore):
             for field, value in metadata.items():
                 if value:
                     if field == "created_at":
-                        redis_metadata[field] = to_unix_timestamp(value)  # type: ignore
+                        # if isinstance(value, str):
+                        #     redis_metadata[field] = to_unix_timestamp(value)
+                        # else:
+                        #     redis_metadata[field] = value
+                        redis_metadata[field] = value
+                    elif field == "organization":
+                        redis_metadata[field] = []
+                        for org in value:
+                            redis_metadata[field].append({
+                                "entity_id": org.entity_id,
+                                "name": org.name,
+                                "country": org.country,
+                                "logo": org.logo,
+                                "is_startup": org.is_startup,
+                                "is_unicorn": org.is_unicorn
+                            })
                     else:
                         redis_metadata[field] = value
         data["metadata"] = redis_metadata
@@ -207,12 +235,9 @@ class RedisDataStore(DataStore):
             elif isinstance(typ, TextField):
                 return f"@{field}:{self._escape(value)} "
             elif isinstance(typ, NumericField):
-                num = to_unix_timestamp(value)
-                match field:
-                    case "start_date":
-                        return f"@{field}:[{num} +inf] "
-                    case "end_date":
-                        return f"@{field}:[-inf {num}] "
+                return f"@{field}:{value}] "
+            else:
+                raise ValueError(f"Unknown RediSearch field type: {typ}")
 
         # Build filter
         if query.filter:
@@ -280,7 +305,6 @@ class RedisDataStore(DataStore):
                     data = self._get_redis_chunk(chunk)
                     await pipe.json().set(key, "$", data)
                 await pipe.execute()
-
         return doc_ids
 
     async def _query(

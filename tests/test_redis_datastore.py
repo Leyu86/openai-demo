@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from datastore.redis_datastore import RedisDataStore
-from models.models import DocumentChunk, DocumentChunkMetadata, QueryWithEmbedding, Source
+from models.models import DocumentChunk, DocumentChunkMetadata, QueryWithEmbedding
 
 
 @pytest.fixture
@@ -21,9 +21,7 @@ def create_document_chunk(i, dim):
         id=f"first-doc_{i}",
         text=f"Lorem ipsum {i}",
         embedding=create_embedding(i, dim),
-        metadata=DocumentChunkMetadata(
-            source=Source.file, created_at="1970-01-01", document_id=f"doc-{i}"
-        ),
+        metadata=DocumentChunkMetadata(created_at="1970-01-01", document_id=f"doc-{i}"),
     )
 
 
