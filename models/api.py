@@ -32,3 +32,13 @@ class DeleteRequest(BaseModel):
 
 class DeleteResponse(BaseModel):
     success: bool
+
+
+class QaQueryRequest(BaseModel):
+    query: str
+
+
+class QaQueryResponse(BaseModel):
+    query: str
+    message: Optional[str]
+

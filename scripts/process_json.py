@@ -22,9 +22,13 @@ async def process_json_dump(filepath: str, datastore: DataStore):
                 for org in orgs:
                     if not org.get("normalized_id"):
                         continue
-                    _org = Organization(entity_id=org["normalized_id"], name=org["normalized_name"],
-                                        country=org["normalized_country"], logo=org.get("normalized_logo"),
-                                        is_startup=org["is_startup"], is_unicorn=org["is_unicorn"])
+                    _org = Organization(entity_id=org.get("normalized_id") if org.get("normalized_id") else org.get(
+                        "normalized_master_entity_id"),
+                                        name=org["normalized_name"] if org.get("normalized_name") else org[
+                                            "original_name"],
+                                        country=org.get("normalized_country"), logo=org.get("normalized_logo"),
+                                        is_startup=org.get("is_startup", False),
+                                        is_unicorn=org.get("is_unicorn", False))
                     _orgs.append(_org)
                 _d = DocumentMetadata(news_id=d["id"], title=d["title"], content=d["content"], url=d["source_url"],
                                       created_at=d["post_time"]["time_ts"], organization=_orgs)
@@ -45,7 +49,7 @@ async def process_json_dump(filepath: str, datastore: DataStore):
 
 async def main():
     # get the arguments
-    filepath = "../../data/tesla_news.json"
+    filepath = "../data/tesla_news.json"
 
     # initialize the db instance once as a global variable
     datastore = await get_datastore()
